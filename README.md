@@ -8,7 +8,7 @@ One upload in. An RSS feed (iTunes and Podcasting 2.0 tags) out, served from you
 
 **Status:** hosting, feeds, import and migration, download analytics, the dashboard, video and YouTube are all built. DarkRelay is now organised around [brands and outlets](#brands-and-outlets): not every brand is a podcast. See [Roadmap](#roadmap).
 
-![A brand page in the DarkRelay dashboard: plays and downloads for the last 90 days, plays per day, a table of plays by outlet, bar charts of podcast apps, countries and devices, and the episode table with 7-, 30- and 90-day download counts](docs/images/dashboard-brand.png)
+![A brand page in the DarkRelay dashboard: plays and downloads for the last 90 days, a Scheduled box with what is still to come, an Outlets box with the podcast feed and the YouTube channel counted apart, plays per day, bar charts of podcast apps, countries and devices, and the episode table with 7-, 30- and 90-day download counts](docs/images/dashboard-brand.png)
 
 <sup>A brand page in the dashboard. The screenshots in this README are of a real build filled with placeholder brands and invented numbers.</sup>
 
@@ -418,7 +418,7 @@ npx darkrelay youtube link my-show <guid> https://youtu.be/<id>   # one at a tim
 npx darkrelay analytics run --source youtube --from 2026-04-01
 ```
 
-**Analytics.** Nightly at 04:40 UTC, for every brand's channels: views and watch time per day for each episode and each video, the channel's own numbers (subscribers, traffic sources, Shorts against long-form), and recent retention curves. The last week is re-read each night, as YouTube finalises numbers a few days late. Views count as plays alongside podcast downloads, and the dashboard's _By outlet_ table keeps them apart.
+**Analytics.** Nightly at 04:40 UTC, for every brand's channels: views and watch time per day for each episode and each video, the channel's own numbers (subscribers, traffic sources, Shorts against long-form), and recent retention curves. The last week is re-read each night, as YouTube finalises numbers a few days late. Views count as plays alongside podcast downloads, and the dashboard's _Outlets_ box keeps them apart, labelled YouTube or Podcast.
 
 A nightly run asks YouTube which videos had views in the window (one report), then asks for the daily detail of only those, so its cost follows activity rather than catalogue size. See [YouTube channels as outlets](#youtube-channels-as-outlets) for the full history pull.
 

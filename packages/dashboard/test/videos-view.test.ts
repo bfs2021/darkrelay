@@ -27,7 +27,7 @@ vi.mock('../src/api', () => ({
   },
 }));
 
-const { videoCards, countFormats, countPending, rangeQuery } = await import('../src/ui');
+const { videoCards, countFormats, countScheduled, rangeQuery } = await import('../src/ui');
 const { slotTime, shortDate } = await import('../src/format');
 const { outletView, videoView } = await import('../src/outlets');
 const { pendingContent } = await import('../src/schedule');
@@ -209,9 +209,9 @@ describe('videoCards', () => {
   });
 });
 
-describe('countPending', () => {
+describe('countScheduled', () => {
   it('counts both what DarkRelay scheduled and what the channel is holding', () => {
-    const { count, next } = countPending(
+    const { count, next } = countScheduled(
       [
         video(),
         video({ videoId: 'held', privacyStatus: 'private', scheduledAt: '2026-11-19T14:00:00Z' }),
@@ -224,7 +224,7 @@ describe('countPending', () => {
   });
 
   it('counts a video with a content item behind it once', () => {
-    const { count } = countPending(
+    const { count } = countScheduled(
       [video({ videoId: 'abc123', privacyStatus: 'private', scheduledAt: '2026-11-19T14:00:00Z' })],
       [entry({ state: 'scheduled', externalId: 'abc123' })],
       NOW,
@@ -233,7 +233,61 @@ describe('countPending', () => {
   });
 
   it('counts nothing when everything is out', () => {
-    expect(countPending([video()], [], NOW)).toEqual({ count: 0, next: undefined });
+    expect(countScheduled([video()], [], NOW)).toMatchObject({ count: 0, next: undefined });
+  });
+
+  it('leaves out a slot that has already passed, and says so apart', () => {
+    // The schedule route keeps a day of history, so an item that went out
+    // yesterday is still on it; it is not something that is coming.
+    const { count, overdue } = countScheduled(
+      [],
+      [entry({ state: 'scheduled', publishAt: '2026-11-11T23:00:00Z' })],
+      NOW,
+    );
+    expect(count).toBe(0);
+    expect(overdue).toBe(1);
+  });
+
+  it('leaves out private and unlisted videos with no release time', () => {
+    const summary = countScheduled(
+      [
+        video({ videoId: 'p', privacyStatus: 'private', scheduledAt: undefined }),
+        video({ videoId: 'u', privacyStatus: 'unlisted', scheduledAt: undefined }),
+      ],
+      [],
+      NOW,
+    );
+    expect(summary.count).toBe(0);
+    expect(summary.held).toBe(2);
+  });
+
+  it('leaves out an item with no slot chosen yet', () => {
+    const summary = countScheduled([], [entry({ publishAt: undefined })], NOW);
+    expect(summary.count).toBe(0);
+    expect(summary.awaitingSlot).toBe(1);
+  });
+
+  it('leaves out a failed upload, whatever time it was meant to go out', () => {
+    const summary = countScheduled(
+      [],
+      [entry({ state: 'failed', error: 'quotaExceeded', publishAt: '2026-11-20T23:00:00Z' })],
+      NOW,
+    );
+    expect(summary.count).toBe(0);
+    expect(summary.failed).toBe(1);
+  });
+
+  it('orders what is coming soonest first', () => {
+    const summary = countScheduled(
+      [],
+      [
+        entry({ id: 'later', title: 'Later', publishAt: '2026-11-25T23:00:00Z' }),
+        entry({ id: 'soon', title: 'Soon', publishAt: '2026-11-13T23:00:00Z' }),
+      ],
+      NOW,
+    );
+    expect(summary.items.map((i) => i.title)).toEqual(['Soon', 'Later']);
+    expect(summary.next).toBe('2026-11-13T23:00:00Z');
   });
 });
 
