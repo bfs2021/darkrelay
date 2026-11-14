@@ -305,6 +305,151 @@ describe('slotsView', () => {
     expect(shown).toContain('Late clip: the window ran out of slots');
   });
 
+  it('plans only unslotted content by default', async () => {
+    stub.get.set('/schedule/cc/slots', slotScores());
+    stub.get.set('/schedule/cc/plans', { brand: 'cc', plans: [] });
+    stub.post.set('/schedule/cc/plans', plan());
+    await slotsView(app, config, 'cc');
+    expect(text(app)).toContain('everything with no slot yet');
+    find(app, (n: Node) => n._text === 'Propose a plan')[0]!.handlers.click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(stub.posted).toEqual([
+      {
+        path: '/schedule/cc/plans',
+        body: { replan: undefined, weeks: undefined, perWeek: undefined },
+      },
+    ]);
+  });
+
+  /** The case for a brand whose Shorts are already scheduled and uploaded. */
+  it('asks for a replan, and says what that means for uploaded clips', async () => {
+    stub.get.set('/schedule/cc/slots', slotScores());
+    stub.get.set('/schedule/cc/plans', { brand: 'cc', plans: [] });
+    stub.post.set('/schedule/cc/plans', plan());
+    await slotsView(app, config, 'cc');
+    const box = find(app, (n: Node) => n.tag === 'input' && n.type === 'checkbox')[0]!;
+    box.checked = true;
+    box.handlers.change();
+    const shown = text(app);
+    expect(shown).toContain('settled slots included');
+    expect(shown).toContain('release time moved there, and is not uploaded again');
+
+    const weeks = find(app, (n: Node) => n.tag === 'input' && n.type === 'number');
+    weeks[0]!.value = '4';
+    weeks[1]!.value = '2';
+    find(app, (n: Node) => n._text === 'Propose a plan')[0]!.handlers.click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(stub.posted[0]!.body).toEqual({ replan: true, weeks: 4, perWeek: 2 });
+  });
+
+  /**
+   * The path for a channel whose Shorts were scheduled in YouTube Studio:
+   * look, then adopt, then move their slots like anything else.
+   */
+  describe('adopting what the channel already has', () => {
+    const candidate = {
+      videoId: 'yt-1',
+      id: 'bus-factor-1a2b3c4d',
+      title: 'The bus factor',
+      kind: 'short',
+      publishAt: '2026-11-22T18:00:00Z',
+      privacyStatus: 'private',
+    };
+
+    const open = async () => {
+      stub.get.set('/schedule/cc/slots', slotScores());
+      stub.get.set('/schedule/cc/plans', { brand: 'cc', plans: [] });
+      await slotsView(app, config, 'cc');
+      return find(app, (n: Node) => n._text === 'Check YouTube for untracked videos')[0]!;
+    };
+
+    it('looks without writing, then offers to adopt', async () => {
+      stub.post.set('/schedule/cc/import', {
+        brand: 'cc',
+        outlet: 'youtube',
+        dryRun: true,
+        adopted: [candidate],
+        skipped: [],
+      });
+      const look = await open();
+      expect(text(app)).toContain('scheduled in YouTube Studio rather than here');
+      look.handlers.click();
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(stub.posted).toEqual([{ path: '/schedule/cc/import', body: { dryRun: true } }]);
+      const shown = text(app);
+      expect(shown).toContain('1 scheduled video on youtube that DarkRelay does not track yet');
+      expect(shown).toContain('The bus factor');
+      expect(find(app, (n: Node) => n._text === 'Adopt it')).toHaveLength(1);
+    });
+
+    it('adopts on the second click, and then offers each one a new slot', async () => {
+      stub.post.set('/schedule/cc/import', {
+        brand: 'cc',
+        outlet: 'youtube',
+        dryRun: true,
+        adopted: [candidate],
+        skipped: [],
+      });
+      const look = await open();
+      look.handlers.click();
+      await new Promise((r) => setTimeout(r, 0));
+
+      stub.post.set('/schedule/cc/import', {
+        brand: 'cc',
+        outlet: 'youtube',
+        dryRun: false,
+        adopted: [candidate],
+        skipped: [],
+      });
+      find(app, (n: Node) => n._text === 'Adopt it')[0]!.handlers.click();
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(stub.posted.at(-1)).toEqual({ path: '/schedule/cc/import', body: { dryRun: false } });
+      const shown = text(app);
+      expect(shown).toContain('Adopted 1 video. They are on the schedule now.');
+      expect(shown).toContain('Reschedule');
+    });
+
+    it('asks for Shorts only when that box is ticked', async () => {
+      stub.post.set('/schedule/cc/import', {
+        brand: 'cc',
+        outlet: 'youtube',
+        dryRun: true,
+        kind: 'short',
+        adopted: [candidate],
+        skipped: [],
+      });
+      const look = await open();
+      const box = find(app, (n: Node) => n.tag === 'label' && text(n).includes('Shorts only'))[0]!
+        .children[0];
+      box.checked = true;
+      look.handlers.click();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(stub.posted.at(-1)).toEqual({
+        path: '/schedule/cc/import',
+        body: { dryRun: true, kind: 'short' },
+      });
+    });
+
+    it('says why each one was left alone', async () => {
+      stub.post.set('/schedule/cc/import', {
+        brand: 'cc',
+        outlet: 'youtube',
+        dryRun: true,
+        adopted: [],
+        skipped: [{ ...candidate, reason: 'it is already out' }],
+      });
+      const look = await open();
+      look.handlers.click();
+      await new Promise((r) => setTimeout(r, 0));
+      const shown = text(app);
+      expect(shown).toContain('every scheduled video on this channel is already tracked');
+      expect(shown).toContain('1 left alone');
+      expect(shown).toContain('it is already out');
+    });
+  });
+
   it('shows the plan the url asks for, not merely the newest', async () => {
     stub.get.set('/schedule/cc/slots', slotScores());
     stub.get.set('/schedule/cc/plans', {

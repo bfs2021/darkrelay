@@ -5,6 +5,7 @@ import {
   layout,
   type VideoFormat,
 } from '@darkrelay/core';
+import { InvokeCommand, LambdaClient } from '@aws-sdk/client-lambda';
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { queryAll } from '../analytics/dynamo';
 import { listBrands } from '../lib/brands';
@@ -18,11 +19,15 @@ import {
   type PlanRequest,
   type PlannerDeps,
 } from './planner';
+import { adoptFromYouTube, type AdoptKind } from './adopt';
 import type { Query } from './history';
 import { route } from './schedule-api';
 
 const store = new S3Store(process.env['MEDIA_BUCKET']!);
 const table = process.env['TABLE_NAME']!;
+/** The Shorts worker, for moving a release time on the platform right away. */
+const shortsFunction = process.env['SHORTS_FUNCTION'];
+const lambda = new LambdaClient({});
 
 /** Deployment defaults. A request may override any of them. */
 const number = (name: string) => {
@@ -76,6 +81,19 @@ const deps: PlannerDeps = {
     }
     return episodes;
   },
+  // Without the worker's name this is left out, and the hourly sweep moves
+  // the release time instead.
+  syncNow: shortsFunction
+    ? async (event) => {
+        await lambda.send(
+          new InvokeCommand({
+            FunctionName: shortsFunction,
+            InvocationType: 'Event',
+            Payload: new TextEncoder().encode(JSON.stringify(event)),
+          }),
+        );
+      }
+    : undefined,
   now: () => new Date(),
   log,
 };
@@ -85,7 +103,8 @@ export type PlanEvent =
   | { action: 'approve'; brand: string; planId: string }
   | { action: 'show'; brand: string; planId: string }
   | { action: 'plans'; brand: string }
-  | { action: 'slots'; brand: string; zone?: string; format?: VideoFormat; sinceDays?: number };
+  | { action: 'slots'; brand: string; zone?: string; format?: VideoFormat; sinceDays?: number }
+  | { action: 'import'; brand: string; outlet?: string; dryRun?: boolean; kind?: AdoptKind };
 
 type HttpEvent = APIGatewayProxyEventV2WithJWTAuthorizer;
 
@@ -159,6 +178,12 @@ async function invoked(event: PlanEvent) {
     }
     case 'plans':
       return listPlans(store, event.brand);
+    case 'import':
+      return adoptFromYouTube(deps, event.brand, {
+        outlet: event.outlet,
+        dryRun: event.dryRun,
+        kind: event.kind,
+      });
     case 'slots':
       return slotScores(deps, event.brand, {
         zone: event.zone,

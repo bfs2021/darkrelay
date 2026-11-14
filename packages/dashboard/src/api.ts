@@ -321,6 +321,65 @@ export interface EpisodeDetails {
   youtube?: { videoId: string };
 }
 
+/** What the Shorts upload form opens with: where a clip can go, and what it came from. */
+export interface ShortsFormContext {
+  brand: string;
+  title: string;
+  timezone?: string;
+  outlets: { id: string; label: string }[];
+  episodes: { episodeId: string; title: string; pubDate: string }[];
+  maxFiles: number;
+}
+
+export interface CreateBatchResponse {
+  batchId: string;
+  files: { name: string; uploadId: string; partSize: number; partCount: number }[];
+}
+
+/** The ingest's verdict on a batch, or where the upload has got to. */
+export interface BatchStatus {
+  batchId: string;
+  brand?: string;
+  status: 'uploading' | 'queued' | 'ingested' | 'rejected';
+  outlet?: string;
+  items?: { id: string; title: string; publishAt?: string }[];
+  errors?: string[];
+}
+
+/** One video on the channel that DarkRelay could adopt, or did. */
+export interface AdoptCandidate {
+  videoId: string;
+  id: string;
+  title: string;
+  kind: string;
+  publishAt?: string;
+  privacyStatus?: string;
+  reason?: string;
+}
+
+export interface AdoptResponse {
+  brand: string;
+  outlet: string;
+  dryRun: boolean;
+  /** Set when only one kind was asked for. */
+  kind?: string;
+  adopted: AdoptCandidate[];
+  skipped: AdoptCandidate[];
+}
+
+/** What came of moving one item's slot. */
+export interface RescheduleResponse {
+  id: string;
+  title: string;
+  publishAt: string;
+  outlet?: string;
+  state?: string;
+  externalId?: string;
+  /** The platform is being told the new time now, not at the next sweep. */
+  syncing: boolean;
+  warnings: string[];
+}
+
 export async function get<T>(config: RuntimeConfig, path: string): Promise<T> {
   return request<T>(config, 'GET', path);
 }

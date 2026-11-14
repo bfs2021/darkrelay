@@ -35,6 +35,13 @@ export interface PlannerDeps {
   query: Query;
   brands(): Promise<BrandConfig[]>;
   episodes(show: string): Promise<EpisodeManifest[]>;
+  /**
+   * Asks the Shorts worker to act on one item now, rather than at the next
+   * hourly sweep. Moving the slot of something already on YouTube is the
+   * case that needs it: the new time is only real once the platform has it.
+   * Where it is missing, the sweep picks the change up within the hour.
+   */
+  syncNow?(event: { brand: string; id: string; outlet: string }): Promise<void>;
   now(): Date;
   log(message: string, data?: Record<string, unknown>): void;
 }
@@ -60,13 +67,13 @@ export interface PlanRequest {
   replan?: boolean;
 }
 
-async function brandOf(deps: PlannerDeps, slug: string): Promise<BrandConfig> {
+export async function brandOf(deps: PlannerDeps, slug: string): Promise<BrandConfig> {
   const brand = (await deps.brands()).find((b) => b.slug === slug);
   if (!brand) throw new Error(`No brand "${slug}" in this deployment`);
   return brand;
 }
 
-function outletOf(brand: BrandConfig, id?: string) {
+export function outletOf(brand: BrandConfig, id?: string) {
   const channels = outletsOfKind(brand, 'youtube');
   const outlet = id ? channels.find((c) => c.id === id) : channels[0];
   if (!outlet) {
@@ -232,13 +239,16 @@ export interface ApprovalResult {
   plan: SchedulePlan;
   applied: { id: string; publishAt: string }[];
   skipped: { id: string; reason: string }[];
+  /** Ids already on the platform, whose release time is being moved there now. */
+  moved: string[];
 }
 
 /**
  * Approval: the one step that writes a plan's times onto content. Even then
  * nothing is uploaded here — the hourly sweep picks each item up when its
  * slot comes within the lead time, exactly as it does for a slot set by
- * hand.
+ * hand. An item already uploaded is a different case: the platform is
+ * holding the old release time, so the worker is asked to move it now.
  */
 export async function approvePlan(
   deps: PlannerDeps,
@@ -256,6 +266,7 @@ export async function approvePlan(
 
   const applied: { id: string; publishAt: string }[] = [];
   const skipped: { id: string; reason: string }[] = [];
+  const moved: string[] = [];
 
   for (const assignment of plan.assignments) {
     const key = layout.contentItem(plan.brand, assignment.id);
@@ -286,6 +297,13 @@ export async function approvePlan(
       contentType: 'application/json',
     });
     applied.push({ id: assignment.id, publishAt: assignment.publishAt });
+    // Uploaded already and waiting on YouTube: a replan has to reach the
+    // platform, or the old time is the one that happens.
+    if (publication?.externalId) moved.push(assignment.id);
+  }
+
+  for (const id of moved) {
+    if (deps.syncNow) await deps.syncNow({ brand: plan.brand, id, outlet: plan.outlet });
   }
 
   const approved: SchedulePlan = {
@@ -303,6 +321,85 @@ export async function approvePlan(
     planId: plan.planId,
     applied: applied.length,
     skipped: skipped.length,
+    moved: moved.length,
   });
-  return { plan: approved, applied, skipped };
+  return { plan: approved, applied, skipped, moved };
+}
+
+export interface RescheduleResult {
+  id: string;
+  title: string;
+  publishAt: string;
+  outlet?: string;
+  state?: string;
+  externalId?: string;
+  /** True when the platform is being told the new time now, not at the sweep. */
+  syncing: boolean;
+  warnings: string[];
+}
+
+/**
+ * Moves one item's slot, or releases it now. The same three steps as
+ * `darkrelay shorts schedule`: write the new time on the content record,
+ * leave a publication that is already out alone, and — if the video is
+ * sitting on YouTube waiting for its old time — ask the worker to move it
+ * there straight away instead of waiting for the sweep.
+ *
+ * An item with no slot gets one here, which is how something the planner
+ * skipped is scheduled by hand.
+ */
+export async function rescheduleContent(
+  deps: PlannerDeps,
+  brandSlug: string,
+  id: string,
+  at: Date,
+): Promise<RescheduleResult> {
+  const now = deps.now();
+  const key = layout.contentItem(brandSlug, id);
+  const raw = await deps.store.getText(key);
+  if (raw === undefined) throw new Error(`No content "${id}" for ${brandSlug}`);
+  const item = JSON.parse(raw) as ContentItem;
+  const publishAt = at.toISOString();
+  const warnings: string[] = [];
+
+  const updated: ContentItem = {
+    ...item,
+    publishAt,
+    // A publication already out keeps its time: that release happened, and
+    // a schedule cannot restate a fact about the world.
+    publications: item.publications.map((p) =>
+      p.state === 'published' ? p : { ...p, publishAt, updatedAt: now.toISOString() },
+    ),
+    updatedAt: now.toISOString(),
+  };
+  await deps.store.put(key, JSON.stringify(updated, null, 2), { contentType: 'application/json' });
+
+  const publication = updated.publications[0];
+  if (publication?.state === 'published') {
+    warnings.push(
+      'This one is already public on YouTube. Its slot here is updated, but the video stays where it is.',
+    );
+  }
+  // Uploaded and waiting: the platform is holding the old time, so move it.
+  const move =
+    publication !== undefined &&
+    publication.state !== 'published' &&
+    publication.externalId !== undefined;
+  if (move && deps.syncNow) {
+    await deps.syncNow({ brand: brandSlug, id, outlet: publication.outlet });
+  } else if (move) {
+    warnings.push('YouTube is moved to the new time by the next hourly sweep.');
+  }
+
+  deps.log('Rescheduled content', { brand: brandSlug, id, publishAt, moved: move });
+  return {
+    id,
+    title: updated.title,
+    publishAt,
+    outlet: publication?.outlet,
+    state: publication?.state,
+    externalId: publication?.externalId,
+    syncing: move && deps.syncNow !== undefined,
+    warnings,
+  };
 }

@@ -307,6 +307,65 @@ describe('uploadContent', () => {
     expect(item.publications[0]).toMatchObject({ sentPublishAt: '2026-11-18T15:00:00Z' });
   });
 
+  /**
+   * An adopted video lives on the channel, not in the bucket. Moving its
+   * release time is the most that can be done to it, and a forced upload
+   * must not go looking for a file that was never here.
+   */
+  it('never uploads a video adopted from the channel', async () => {
+    const adopted = ContentItem.parse({
+      schemaVersion: 1,
+      id: 'adopted-1',
+      brand: 'cc',
+      kind: 'short',
+      title: 'Scheduled in Studio',
+      media: { url: 'https://www.youtube.com/watch?v=yt-1' },
+      publishAt: '2026-11-20T18:00:00Z',
+      publications: [
+        {
+          outlet: 'youtube',
+          state: 'scheduled',
+          externalId: 'yt-1',
+          publishAt: '2026-11-20T18:00:00Z',
+          sentPublishAt: '2026-11-20T18:00:00Z',
+          warnings: [],
+        },
+      ],
+      createdAt: NOW.toISOString(),
+      updatedAt: NOW.toISOString(),
+    });
+    store.seed(layout.contentItem('cc', 'adopted-1'), JSON.stringify(adopted));
+    const sessions = fake.sessions.size;
+
+    // Its slot is where YouTube already has it: nothing to do.
+    expect(await uploadContent(uploadDeps(), { brand: 'cc', id: 'adopted-1' })).toBe('already');
+    // Moved here: the platform is told, and still nothing is uploaded.
+    store.seed(
+      layout.contentItem('cc', 'adopted-1'),
+      JSON.stringify({ ...adopted, publishAt: '2026-11-25T18:00:00Z' }),
+    );
+    expect(await uploadContent(uploadDeps(), { brand: 'cc', id: 'adopted-1' })).toBe('rescheduled');
+    expect(fake.statusUpdates.at(-1)).toMatchObject({
+      id: 'yt-1',
+      status: { publishAt: '2026-11-25T18:00:00Z' },
+    });
+
+    // Even a publication reset to planned, and even forced, sends nothing.
+    store.seed(
+      layout.contentItem('cc', 'adopted-1'),
+      JSON.stringify({
+        ...adopted,
+        publications: [{ outlet: 'youtube', state: 'planned', warnings: [] }],
+      }),
+    );
+    expect(await uploadContent(uploadDeps(), { brand: 'cc', id: 'adopted-1' })).toBe('external');
+    expect(await uploadContent(uploadDeps(), { brand: 'cc', id: 'adopted-1', force: true })).toBe(
+      'external',
+    );
+    // No upload session was ever opened: nothing was sent to YouTube.
+    expect(fake.sessions.size).toBe(sessions);
+  });
+
   it('refuses to upload something with no slot unless forced', async () => {
     seedItem({ publishAt: undefined, publications: [] });
     expect(await uploadContent(uploadDeps(), { brand: 'cc', id: 'clip-1' })).toBe('no-slot');

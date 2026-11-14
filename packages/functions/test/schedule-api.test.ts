@@ -423,6 +423,170 @@ describe('approval', () => {
   });
 });
 
+describe('approving a replan', () => {
+  it('moves the release time of clips already on YouTube, and leaves the ids alone', async () => {
+    seedHistory('cc');
+    const planned = seedContent('cc', {
+      publishAt: '2026-11-20T18:00:00Z',
+      publications: [
+        {
+          outlet: 'youtube',
+          state: 'scheduled',
+          externalId: 'yt-1',
+          publishAt: '2026-11-20T18:00:00Z',
+          sentPublishAt: '2026-11-20T18:00:00Z',
+          warnings: [],
+        },
+      ],
+    });
+    const synced: unknown[] = [];
+    const syncNow = async (event: { brand: string; id: string; outlet: string }) => {
+      synced.push(event);
+    };
+    // Without `replan` a settled slot is left alone, which is why the
+    // dashboard has to ask for one.
+    const left = await planContent(deps({ syncNow }), { brand: 'cc' });
+    expect(left.assignments).toEqual([]);
+
+    const plan = await planContent(deps({ syncNow }), { brand: 'cc', replan: true });
+    expect(plan.assignments.map((a) => a.id)).toEqual([planned.id]);
+
+    const res = await route(
+      deps({ syncNow }),
+      req({
+        method: 'POST',
+        path: `/schedule/cc/plans/${plan.planId}/approve`,
+        access: uploader,
+      }),
+    );
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({ moved: [planned.id] });
+    expect(synced).toEqual([{ brand: 'cc', id: planned.id, outlet: 'youtube' }]);
+
+    const stored = ContentItem.parse(store.json(layout.contentItem('cc', planned.id)));
+    expect(stored.publishAt).toBe(plan.assignments[0]!.publishAt);
+    expect(stored.publications[0]).toMatchObject({ state: 'scheduled', externalId: 'yt-1' });
+  });
+});
+
+describe('moving one slot', () => {
+  const move = (id: string, body: unknown, access = uploader, over: Partial<PlannerDeps> = {}) =>
+    route(deps(over), req({ method: 'POST', path: `/schedule/cc/content/${id}`, body, access }));
+
+  it('writes the new time on the item and every publication not yet out', async () => {
+    const item = seedContent('cc', { publishAt: '2026-11-20T18:00:00Z' });
+    const res = await move(item.id, { at: '2026-11-25T18:00:00-05:00' });
+    expect(res.statusCode).toBe(200);
+    const stored = ContentItem.parse(store.json(layout.contentItem('cc', item.id)));
+    expect(stored.publishAt).toBe('2026-11-25T23:00:00.000Z');
+    expect(stored.publications[0]).toMatchObject({
+      publishAt: '2026-11-25T23:00:00.000Z',
+      state: 'planned',
+    });
+    expect(res.body).toMatchObject({ syncing: false, warnings: [] });
+  });
+
+  it('gives a slot to something the planner never placed', async () => {
+    const item = seedContent('cc');
+    expect((await move(item.id, { at: '2026-11-25T18:00:00-05:00' })).statusCode).toBe(200);
+    const stored = ContentItem.parse(store.json(layout.contentItem('cc', item.id)));
+    expect(stored.publishAt).toBe('2026-11-25T23:00:00.000Z');
+  });
+
+  it('releases one now', async () => {
+    const item = seedContent('cc', { publishAt: '2026-12-01T18:00:00Z' });
+    const res = await move(item.id, { at: 'now' });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({ publishAt: NOW.toISOString() });
+  });
+
+  /** The case the dashboard exists for: the video is already on YouTube. */
+  it('tells the worker to move a video that is already uploaded', async () => {
+    const item = seedContent('cc', {
+      publishAt: '2026-11-20T18:00:00Z',
+      publications: [
+        {
+          outlet: 'youtube',
+          state: 'scheduled',
+          externalId: 'yt-1',
+          publishAt: '2026-11-20T18:00:00Z',
+          sentPublishAt: '2026-11-20T18:00:00Z',
+          warnings: [],
+        },
+      ],
+    });
+    const synced: unknown[] = [];
+    const res = await move(item.id, { at: 'now' }, uploader, {
+      syncNow: async (event) => void synced.push(event),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(synced).toEqual([{ brand: 'cc', id: item.id, outlet: 'youtube' }]);
+    expect(res.body).toMatchObject({ syncing: true, externalId: 'yt-1' });
+    // The upload is not redone: the id and the state it has on the platform stay.
+    const stored = ContentItem.parse(store.json(layout.contentItem('cc', item.id)));
+    expect(stored.publications[0]).toMatchObject({ state: 'scheduled', externalId: 'yt-1' });
+    expect(stored.publications[0]!.publishAt).toBe(NOW.toISOString());
+  });
+
+  it('falls back to the sweep where the worker cannot be invoked', async () => {
+    const item = seedContent('cc', {
+      publications: [{ outlet: 'youtube', state: 'scheduled', externalId: 'yt-1', warnings: [] }],
+    });
+    const res = await move(item.id, { at: '2026-11-25T18:00:00-05:00' }, uploader, {
+      syncNow: undefined,
+    });
+    expect(res.body).toMatchObject({
+      syncing: false,
+      warnings: [expect.stringContaining('hourly sweep')],
+    });
+  });
+
+  it('leaves a published video where it is, and says so', async () => {
+    const item = seedContent('cc', {
+      publishAt: '2026-11-01T18:00:00Z',
+      publications: [
+        {
+          outlet: 'youtube',
+          state: 'published',
+          externalId: 'yt-9',
+          publishAt: '2026-11-01T18:00:00Z',
+          warnings: [],
+        },
+      ],
+    });
+    const res = await move(item.id, { at: '2026-12-25T18:00:00-05:00' });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      warnings: [expect.stringContaining('already public')],
+    });
+    const stored = ContentItem.parse(store.json(layout.contentItem('cc', item.id)));
+    expect(stored.publications[0]!.publishAt).toBe('2026-11-01T18:00:00Z');
+  });
+
+  it('needs the uploader role, not just a viewer', async () => {
+    const item = seedContent('cc');
+    for (const access of [viewer, accessFromGroups([]), accessFromGroups(['uploader:other'])]) {
+      expect((await move(item.id, { at: '2026-11-25T18:00:00-05:00' }, access)).statusCode).toBe(
+        403,
+      );
+    }
+    expect(ContentItem.parse(store.json(layout.contentItem('cc', item.id))).publishAt).toBe(
+      undefined,
+    );
+  });
+
+  it('refuses a time with no zone, a bad id and content that is not there', async () => {
+    const item = seedContent('cc');
+    expect((await move(item.id, { at: '2026-11-25T18:00' })).statusCode).toBe(400);
+    expect((await move(item.id, { at: 'tomorrow' })).statusCode).toBe(400);
+    expect((await move(item.id, {})).statusCode).toBe(400);
+    expect((await move('Not An Id', { at: 'now' })).statusCode).toBe(400);
+    const missing = await move('clip-ffff9999', { at: 'now' });
+    expect(missing.statusCode).toBe(400);
+    expect(missing.body).toMatchObject({ error: expect.stringContaining('No content') });
+  });
+});
+
 describe('routing', () => {
   it('is a 404 for anything it does not serve', async () => {
     for (const path of ['/', '/other', '/schedule/cc/nonsense', '/schedule/cc/plans/a/b/c']) {

@@ -224,6 +224,81 @@ export async function showShortsPlan(brand: string, planId: string, global: Glob
   }
 }
 
+interface AdoptCandidate {
+  videoId: string;
+  id: string;
+  title: string;
+  kind: string;
+  publishAt?: string;
+  privacyStatus?: string;
+  reason?: string;
+}
+
+interface AdoptResult {
+  brand: string;
+  outlet: string;
+  dryRun: boolean;
+  kind?: string;
+  adopted: AdoptCandidate[];
+  skipped: AdoptCandidate[];
+}
+
+/** `--kind short`, to leave a channel's long-form videos alone (or the reverse). */
+function adoptKind(value: string | undefined): 'short' | 'video' | undefined {
+  if (value === undefined) return undefined;
+  const kind = value.trim().toLowerCase().replace(/s$/, '');
+  if (kind === 'short' || kind === 'video') return kind;
+  throw new Error(`--kind: "${value}" is not a kind. Use --kind short or --kind video.`);
+}
+
+/**
+ * Adopts videos the channel already holds, so the scheduler can reach them.
+ * Nothing is uploaded and nothing on YouTube changes: this writes the
+ * records DarkRelay was missing, from what the nightly pull already stored.
+ */
+export async function importShorts(
+  brand: string,
+  flags: { outlet?: string; dryRun?: boolean; kind?: string },
+  global: GlobalOptions,
+) {
+  const result = (await invokePlanner(global, {
+    action: 'import',
+    brand,
+    outlet: flags.outlet,
+    dryRun: flags.dryRun,
+    kind: adoptKind(flags.kind),
+  })) as AdoptResult;
+
+  const only = result.kind === 'short' ? 'Short' : 'long-form video';
+  const line = (c: AdoptCandidate) =>
+    `  ${c.videoId.padEnd(14)} ${c.kind.padEnd(6)} ${(c.publishAt ?? '—').padEnd(22)} ${c.title}`;
+  if (result.adopted.length) {
+    console.log(
+      result.dryRun
+        ? `${result.adopted.length} video(s) would be adopted for ${brand} (outlet ${result.outlet}):`
+        : `Adopted ${result.adopted.length} video(s) for ${brand} (outlet ${result.outlet}):`,
+    );
+    for (const c of result.adopted) console.log(line(c));
+  } else if (result.kind) {
+    console.log(`Nothing to adopt for ${brand}: no untracked scheduled ${only}s.`);
+  } else {
+    console.log(`Nothing to adopt for ${brand}.`);
+  }
+  if (result.skipped.length) {
+    console.log(`\nLeft alone:`);
+    for (const c of result.skipped) console.log(`${line(c)}\n      ${c.reason}`);
+  }
+  if (result.dryRun && result.adopted.length) {
+    const kind = result.kind ? ` --kind ${result.kind}` : '';
+    console.log(`\nNothing was written. To take them:\n  darkrelay shorts import ${brand}${kind}`);
+  } else if (result.adopted.length) {
+    console.log(
+      `\nThe schedule now holds them. Move one: darkrelay shorts schedule ${brand} <id> --at "..."` +
+        `\nOr re-plan the lot: darkrelay shorts plan ${brand} --replan`,
+    );
+  }
+}
+
 export const RAMP = ['·', '░', '▒', '▓', '█'];
 
 /** A cell of the heatmap. Untested slots stay blank, which is information too. */

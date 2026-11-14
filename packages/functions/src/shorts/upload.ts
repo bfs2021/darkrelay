@@ -4,6 +4,7 @@ import {
   contentTypeFor,
   dueForUpload,
   feedShow,
+  isExternalMedia,
   layout,
   needsReschedule,
   outletsOfKind,
@@ -59,6 +60,8 @@ export type ContentOutcome =
   | 'no-content'
   | 'no-outlet'
   | 'no-slot'
+  /** Adopted from the channel: there is no file here to upload. */
+  | 'external'
   | 'already'
   | 'in-progress'
   | 'continuing'
@@ -142,6 +145,10 @@ export async function uploadContent(
   if (publication?.state === 'published' || publication?.state === 'scheduled') {
     return needsReschedule(item, outlet.id) ? reschedule(deps, brand, item, outlet) : 'already';
   }
+  // An adopted video's media is a URL on the platform, not a key in the
+  // bucket. Moving its release time is the most that can be done to it, and
+  // that is handled above; there is nothing here to send.
+  if (isExternalMedia(item)) return 'external';
   if (!item.publishAt && !event.force) return 'no-slot';
 
   const stateKey = layout.contentUpload(event.brand, event.id);

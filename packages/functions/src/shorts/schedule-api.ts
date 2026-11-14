@@ -1,5 +1,7 @@
 import {
+  CONTENT_ID,
   SLUG,
+  STORED_KINDS,
   VIDEO_FORMATS,
   canUpload,
   canView,
@@ -11,11 +13,13 @@ import {
   type VideoFormat,
 } from '@darkrelay/core';
 import { z } from 'zod';
+import { adoptFromYouTube } from './adopt';
 import {
   approvePlan,
   listPlans,
   loadPlan,
   planContent,
+  rescheduleContent,
   slotScores,
   type PlannerDeps,
 } from './planner';
@@ -49,6 +53,25 @@ const error = (statusCode: number, message: string): ApiResponse => ({
 const FORBIDDEN = error(403, "You don't have access to this brand");
 const NOT_YOURS = error(403, 'You need the uploader role on this brand to schedule anything');
 const PLAN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+/**
+ * A new slot for one item: a time with a zone, or "now" to release it. The
+ * same two forms `--at` takes, so a slot moved in the dashboard and a slot
+ * moved from the CLI mean the same thing.
+ */
+const SlotBody = z
+  .object({ at: z.union([z.literal('now'), z.iso.datetime({ offset: true })]) })
+  .strict();
+
+/** Adopting what a channel already holds: look first, then write. */
+const ImportBody = z
+  .object({
+    outlet: z.string().max(40).optional(),
+    dryRun: z.boolean().optional(),
+    /** Narrows it to one kind, for a channel whose long-form lives elsewhere. */
+    kind: z.enum(STORED_KINDS).optional(),
+  })
+  .strict();
 
 /** What a dashboard may ask for when building a plan. */
 const PlanBody = z
@@ -199,6 +222,37 @@ export async function route(deps: PlannerDeps, req: ScheduleRequest): Promise<Ap
         sinceDays: numberParam(req.params['since']),
       });
       return { statusCode: 200, body: scores };
+    }
+
+    // Adopting videos the channel already holds, so the scheduler can reach
+    // them. Writing records is an uploader's call, and so is looking: a dry
+    // run reads the brand's whole video history.
+    if (parts[2] === 'import') {
+      if (parts.length !== 3) return error(404, 'Not found');
+      if (req.method !== 'POST') return error(405, 'Method not allowed');
+      if (!canUpload(req.access, brand)) return NOT_YOURS;
+      const parsed = ImportBody.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return error(400, z.prettifyError(parsed.error).replace(/\n/g, '; '));
+      }
+      return { statusCode: 200, body: await adoptFromYouTube(deps, brand, parsed.data) };
+    }
+
+    // Moving one item's slot, including one already uploaded to YouTube: the
+    // record is rewritten and the platform is told, which is why this needs
+    // `uploader` and not just `viewer`.
+    if (parts[2] === 'content') {
+      if (parts.length !== 4) return error(404, 'Not found');
+      if (req.method !== 'POST') return error(405, 'Method not allowed');
+      if (!canUpload(req.access, brand)) return NOT_YOURS;
+      const id = parts[3]!;
+      if (!CONTENT_ID.test(id)) return error(400, 'Bad content id');
+      const parsed = SlotBody.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return error(400, z.prettifyError(parsed.error).replace(/\n/g, '; '));
+      }
+      const at = parsed.data.at === 'now' ? deps.now() : new Date(parsed.data.at);
+      return { statusCode: 200, body: await rescheduleContent(deps, brand, id, at) };
     }
 
     if (parts[2] !== 'plans') return error(404, 'Not found');
