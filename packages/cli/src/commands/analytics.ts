@@ -23,9 +23,11 @@ export function datesFor(
   };
   if (flags.date?.length) return flags.date.map(valid);
   if (flags.from) {
+    const from = valid(flags.from);
     const to = valid(flags.to ?? new Date(now.getTime() - 86_400_000).toISOString().slice(0, 10));
+    if (Date.parse(from) > Date.parse(to)) throw new Error(`--from ${from} is after --to ${to}`);
     const out: string[] = [];
-    for (let t = Date.parse(valid(flags.from)); t <= Date.parse(to); t += 86_400_000) {
+    for (let t = Date.parse(from); t <= Date.parse(to); t += 86_400_000) {
       out.push(new Date(t).toISOString().slice(0, 10));
     }
     if (out.length > 400) throw new Error('At most 400 days per run');
