@@ -338,9 +338,15 @@ YouTube changes. Afterwards they are on the schedule like anything else:
 
   darkrelay shorts import my-brand --dry-run
   darkrelay shorts import my-brand
-  darkrelay shorts plan my-brand --replan`,
+  darkrelay shorts plan my-brand --replan
+
+Both kinds are taken by default. A channel whose long-form videos are
+published from episode manifests wants only the Shorts:
+
+  darkrelay shorts import my-brand --kind short`,
   )
   .option('--outlet <id>', 'which YouTube outlet (default: the first one)')
+  .option('--kind <kind>', 'only this kind: short or video (default: both)')
   .option('--dry-run', 'list what would be adopted')
   .action((brand, o) => importShorts(brand, o, g()));
 shorts

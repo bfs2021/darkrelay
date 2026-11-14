@@ -195,6 +195,44 @@ describe('what is left alone', () => {
     });
   });
 
+  it('takes only the Shorts when asked, and says what it passed over', async () => {
+    seedVideo('dr', { videoId: 'yt-short', format: 'short', title: 'A clip' });
+    seedVideo('dr', { videoId: 'yt-long', format: 'long', title: 'The whole episode' });
+    const result = await adoptFromYouTube(deps(), 'dr', { kind: 'short' });
+    expect(result.kind).toBe('short');
+    expect(result.adopted.map((a) => a.videoId)).toEqual(['yt-short']);
+    expect(result.skipped).toEqual([
+      expect.objectContaining({
+        videoId: 'yt-long',
+        reason: 'it is a long-form video, and only Shorts were asked for',
+      }),
+    ]);
+    expect(store.objects.size).toBe(1);
+  });
+
+  it('takes only the long-form when that is what was asked for', async () => {
+    seedVideo('dr', { videoId: 'yt-short', format: 'short', title: 'A clip' });
+    seedVideo('dr', { videoId: 'yt-long', format: 'long', title: 'The whole episode' });
+    const result = await adoptFromYouTube(deps(), 'dr', { kind: 'video' });
+    expect(result.adopted.map((a) => a.videoId)).toEqual(['yt-long']);
+    expect(result.skipped[0]!.reason).toBe(
+      'it is a Short, and only long-form videos were asked for',
+    );
+  });
+
+  it('says a video is already out before saying it is the wrong kind', async () => {
+    // The kind filter is about what would otherwise have been taken, so a
+    // video with nothing to move still reads as having nothing to move.
+    seedVideo('dr', {
+      videoId: 'yt-old',
+      format: 'long',
+      privacyStatus: 'public',
+      scheduledAt: undefined,
+    });
+    const result = await adoptFromYouTube(deps(), 'dr', { kind: 'short' });
+    expect(result.skipped[0]!.reason).toBe('it is already out');
+  });
+
   it('refuses a brand with no channel rather than inventing an outlet', async () => {
     const noChannel = BrandConfig.parse({
       schemaVersion: 1,
@@ -237,6 +275,15 @@ describe('over the API', () => {
     expect(took.statusCode).toBe(200);
     expect(took.body).toMatchObject({ dryRun: false, adopted: [{ videoId: 'yt-1' }] });
     expect(store.objects.size).toBe(1);
+  });
+
+  it('passes a kind through, and refuses one that is not a kind', async () => {
+    seedVideo('dr', { videoId: 'yt-long', format: 'long' });
+    const narrowed = await call({ dryRun: true, kind: 'short' });
+    expect(narrowed.statusCode).toBe(200);
+    expect(narrowed.body).toMatchObject({ kind: 'short', adopted: [] });
+    expect((await call({ dryRun: true, kind: 'episode' })).statusCode).toBe(400);
+    expect((await call({ dryRun: true, kind: 'shorts' })).statusCode).toBe(400);
   });
 
   it('refuses a body it does not understand, and a GET', async () => {

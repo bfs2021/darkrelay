@@ -238,8 +238,17 @@ interface AdoptResult {
   brand: string;
   outlet: string;
   dryRun: boolean;
+  kind?: string;
   adopted: AdoptCandidate[];
   skipped: AdoptCandidate[];
+}
+
+/** `--kind short`, to leave a channel's long-form videos alone (or the reverse). */
+function adoptKind(value: string | undefined): 'short' | 'video' | undefined {
+  if (value === undefined) return undefined;
+  const kind = value.trim().toLowerCase().replace(/s$/, '');
+  if (kind === 'short' || kind === 'video') return kind;
+  throw new Error(`--kind: "${value}" is not a kind. Use --kind short or --kind video.`);
 }
 
 /**
@@ -249,7 +258,7 @@ interface AdoptResult {
  */
 export async function importShorts(
   brand: string,
-  flags: { outlet?: string; dryRun?: boolean },
+  flags: { outlet?: string; dryRun?: boolean; kind?: string },
   global: GlobalOptions,
 ) {
   const result = (await invokePlanner(global, {
@@ -257,8 +266,10 @@ export async function importShorts(
     brand,
     outlet: flags.outlet,
     dryRun: flags.dryRun,
+    kind: adoptKind(flags.kind),
   })) as AdoptResult;
 
+  const only = result.kind === 'short' ? 'Short' : 'long-form video';
   const line = (c: AdoptCandidate) =>
     `  ${c.videoId.padEnd(14)} ${c.kind.padEnd(6)} ${(c.publishAt ?? '—').padEnd(22)} ${c.title}`;
   if (result.adopted.length) {
@@ -268,6 +279,8 @@ export async function importShorts(
         : `Adopted ${result.adopted.length} video(s) for ${brand} (outlet ${result.outlet}):`,
     );
     for (const c of result.adopted) console.log(line(c));
+  } else if (result.kind) {
+    console.log(`Nothing to adopt for ${brand}: no untracked scheduled ${only}s.`);
   } else {
     console.log(`Nothing to adopt for ${brand}.`);
   }
@@ -276,7 +289,8 @@ export async function importShorts(
     for (const c of result.skipped) console.log(`${line(c)}\n      ${c.reason}`);
   }
   if (result.dryRun && result.adopted.length) {
-    console.log(`\nNothing was written. To take them:\n  darkrelay shorts import ${brand}`);
+    const kind = result.kind ? ` --kind ${result.kind}` : '';
+    console.log(`\nNothing was written. To take them:\n  darkrelay shorts import ${brand}${kind}`);
   } else if (result.adopted.length) {
     console.log(
       `\nThe schedule now holds them. Move one: darkrelay shorts schedule ${brand} <id> --at "..."` +

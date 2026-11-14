@@ -361,6 +361,8 @@ export interface AdoptResponse {
   brand: string;
   outlet: string;
   dryRun: boolean;
+  /** Set when only one kind was asked for. */
+  kind?: string;
   adopted: AdoptCandidate[];
   skipped: AdoptCandidate[];
 }

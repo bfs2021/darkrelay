@@ -23,12 +23,15 @@ import { listContent } from './upload';
  * sweep from ever trying to upload a file that does not exist here.
  */
 
+/** What adoption can take: the two stored kinds, as YouTube's formats map onto them. */
+export type AdoptKind = 'short' | 'video';
+
 export interface AdoptCandidate {
   videoId: string;
   /** The content id this video would get, or already has. */
   id: string;
   title: string;
-  kind: 'short' | 'video';
+  kind: AdoptKind;
   /** The release time the platform is holding. */
   publishAt?: string;
   privacyStatus?: string;
@@ -40,6 +43,8 @@ export interface AdoptResult {
   brand: string;
   outlet: string;
   dryRun: boolean;
+  /** The kind asked for, when only one was. */
+  kind?: AdoptKind;
   /** Written, or — on a dry run — what would be written. */
   adopted: AdoptCandidate[];
   skipped: AdoptCandidate[];
@@ -49,6 +54,11 @@ export interface AdoptOptions {
   outlet?: string;
   /** Looks and reports, writes nothing. */
   dryRun?: boolean;
+  /**
+   * Only adopt this kind. A channel usually holds both, and a brand whose
+   * long-form videos are published elsewhere wants only the Shorts.
+   */
+  kind?: AdoptKind;
 }
 
 interface VideoRow {
@@ -126,6 +136,15 @@ export async function adoptFromYouTube(
       });
       continue;
     }
+    if (opts.kind && kind !== opts.kind) {
+      skipped.push({
+        ...candidate,
+        reason: `it is a ${kind === 'short' ? 'Short' : 'long-form video'}, and only ${
+          opts.kind === 'short' ? 'Shorts' : 'long-form videos'
+        } were asked for`,
+      });
+      continue;
+    }
 
     const input: ContentItemInput = {
       schemaVersion: 1,
@@ -182,10 +201,11 @@ export async function adoptFromYouTube(
   deps.log(dryRun ? 'Looked for videos to adopt' : 'Adopted videos from YouTube', {
     brand: brandSlug,
     outlet: outlet.id,
+    kind: opts.kind ?? 'any',
     adopted: adopted.length,
     skipped: skipped.length,
   });
-  return { brand: brandSlug, outlet: outlet.id, dryRun, adopted, skipped };
+  return { brand: brandSlug, outlet: outlet.id, dryRun, kind: opts.kind, adopted, skipped };
 }
 
 /**

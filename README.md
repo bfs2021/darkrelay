@@ -171,6 +171,8 @@ npx darkrelay shorts import my-brand
 
 Or _Check YouTube for untracked videos_ on the brand's publish-times page, which lists them before writing anything.
 
+Both kinds are taken by default. A channel whose long-form videos are published from episode manifests wants only the Shorts, which is `--kind short` (or the _Shorts only_ box on that page); `--kind video` is the other way round. Anything of the other kind is reported among what was left alone, with that as the reason.
+
 Nothing is uploaded and nothing on the channel changes: an adopted record takes the video's id, its kind, and the release time YouTube is holding, and its media is the video's own URL rather than a key in the bucket. That last part is load-bearing — media that lives on the platform is never uploaded by the sweep, whatever state its publication is in, so adoption can never turn into a second copy of the video. Afterwards it is on the schedule like anything else: reschedulable, re-plannable, and counted among what is coming up.
 
 What it leaves alone, and says so: a video that is already out (nothing to move), a private one with no release time (not scheduled at all), an episode's own video (the feed publishes that), and anything DarkRelay already tracks. Adopting twice adopts nothing new — ids are derived from the platform's id.

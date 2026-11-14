@@ -411,6 +411,27 @@ describe('slotsView', () => {
       expect(shown).toContain('Reschedule');
     });
 
+    it('asks for Shorts only when that box is ticked', async () => {
+      stub.post.set('/schedule/cc/import', {
+        brand: 'cc',
+        outlet: 'youtube',
+        dryRun: true,
+        kind: 'short',
+        adopted: [candidate],
+        skipped: [],
+      });
+      const look = await open();
+      const box = find(app, (n: Node) => n.tag === 'label' && text(n).includes('Shorts only'))[0]!
+        .children[0];
+      box.checked = true;
+      look.handlers.click();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(stub.posted.at(-1)).toEqual({
+        path: '/schedule/cc/import',
+        body: { dryRun: true, kind: 'short' },
+      });
+    });
+
     it('says why each one was left alone', async () => {
       stub.post.set('/schedule/cc/import', {
         brand: 'cc',

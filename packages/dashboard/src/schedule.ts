@@ -565,11 +565,21 @@ function adoptCard(config: RuntimeConfig, brand: string): HTMLElement {
     'muted',
   );
 
+  // A channel's long-form videos are usually published from episode
+  // manifests, so taking only the Shorts is the common case.
+  const shortsOnly = el('input');
+  shortsOnly.type = 'checkbox';
+  const shortsLabel = el('label', undefined, 'inline');
+  shortsLabel.append(shortsOnly, ' Shorts only, leaving long-form videos alone');
+
   const ask = async (dryRun: boolean) => {
     look.disabled = true;
     look.textContent = dryRun ? 'Looking…' : 'Adopting…';
     try {
-      const result = await post<AdoptResponse>(config, `/schedule/${brand}/import`, { dryRun });
+      const result = await post<AdoptResponse>(config, `/schedule/${brand}/import`, {
+        dryRun,
+        kind: shortsOnly.checked ? 'short' : undefined,
+      });
       out.replaceChildren(adoptResult(config, brand, result, ask));
     } catch (e) {
       out.replaceChildren(el('p', (e as Error).message, 'error'));
@@ -580,7 +590,7 @@ function adoptCard(config: RuntimeConfig, brand: string): HTMLElement {
   };
   look.addEventListener('click', () => void ask(true));
 
-  body.append(look, note, out);
+  body.append(shortsLabel, look, note, out);
   return card('Videos already on the channel', body);
 }
 
@@ -595,9 +605,11 @@ function adoptResult(
     box.append(
       el(
         'p',
-        result.skipped.length
-          ? 'Nothing to adopt: every scheduled video on this channel is already tracked.'
-          : 'Nothing to adopt. Videos appear here the morning after the nightly pull sees them.',
+        !result.skipped.length
+          ? 'Nothing to adopt. Videos appear here the morning after the nightly pull sees them.'
+          : result.kind === 'short'
+            ? 'Nothing to adopt: every scheduled Short on this channel is already tracked.'
+            : 'Nothing to adopt: every scheduled video on this channel is already tracked.',
         'muted',
       ),
     );

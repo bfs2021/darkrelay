@@ -1,6 +1,7 @@
 import {
   CONTENT_ID,
   SLUG,
+  STORED_KINDS,
   VIDEO_FORMATS,
   canUpload,
   canView,
@@ -64,7 +65,12 @@ const SlotBody = z
 
 /** Adopting what a channel already holds: look first, then write. */
 const ImportBody = z
-  .object({ outlet: z.string().max(40).optional(), dryRun: z.boolean().optional() })
+  .object({
+    outlet: z.string().max(40).optional(),
+    dryRun: z.boolean().optional(),
+    /** Narrows it to one kind, for a channel whose long-form lives elsewhere. */
+    kind: z.enum(STORED_KINDS).optional(),
+  })
   .strict();
 
 /** What a dashboard may ask for when building a plan. */
