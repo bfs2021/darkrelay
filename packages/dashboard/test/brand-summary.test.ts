@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { ScheduleEntry, ShowResponse, VideoSummary } from '../src/api';
-import { countScheduled, outletRows, outletsSummary, scheduledCard } from '../src/ui';
+import { countScheduled, outletRows, outletsSummary, scheduledCard, trend } from '../src/ui';
 import { slotTime } from '../src/format';
 import { find, installDom, text, type Node } from './dom';
 
@@ -170,6 +170,30 @@ describe('outletsSummary', () => {
     expect(text(outletsSummary(show(), 'dr', 90) as unknown as Node)).toContain(
       'No outlets recorded yet',
     );
+  });
+});
+
+describe('trend', () => {
+  it('ends the line on the last counted day, not on a day with no row', () => {
+    const box = trend(
+      show({
+        from: '2026-11-10',
+        to: '2026-11-14',
+        daily: [
+          { date: '2026-11-10', downloads: 120, serverDownloads: 0 },
+          { date: '2026-11-12', downloads: 140, serverDownloads: 0 },
+          { date: '2026-11-13', downloads: 100, serverDownloads: 0 },
+        ],
+      }),
+    ) as unknown as Node;
+    const dates = find(box, (n: Node) => n.tag === 'tr')
+      .map(text)
+      .filter((r: string) => r.includes('2026-'));
+    expect(dates.at(-1)).toContain('2026-11-13');
+    expect(dates.join(' ')).not.toContain('2026-11-14');
+    // A day in the middle with nothing recorded is still a zero: that one is
+    // a real quiet day, not a day nobody has counted.
+    expect(dates.join(' ')).toContain('2026-11-11');
   });
 });
 

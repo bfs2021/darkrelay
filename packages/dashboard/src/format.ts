@@ -67,6 +67,27 @@ export function daysBetween(from: string, to: string): string[] {
   return out;
 }
 
+/**
+ * Where a series really ends. A day nobody has counted yet has no row at all,
+ * and filling it in as a zero draws a cliff to the floor: it reads as the day
+ * the audience vanished, when it is only the day the night's run has not
+ * reached. So the line stops at the last day there is an answer for.
+ *
+ * The range's own end is kept where there is nothing recorded in it at all,
+ * or nothing since `from`, because an empty chart says less than a flat one.
+ */
+export function recordedTo<T extends { date: string }>(
+  rows: T[],
+  to: string,
+  from?: string,
+): string {
+  let last: string | undefined;
+  for (const row of rows) if (!last || row.date > last) last = row.date;
+  if (!last || last >= to) return to;
+  if (from && last < from) return to;
+  return last;
+}
+
 export function fillDays<T extends { date: string }>(
   rows: T[],
   from: string,

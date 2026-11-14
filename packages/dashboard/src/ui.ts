@@ -11,6 +11,7 @@ import {
   outletLabel,
   playsWord,
   podcastApps,
+  recordedTo,
   shortDate,
   slotTime,
   stateNote,
@@ -155,7 +156,8 @@ export function brandSwitcher(config: RuntimeConfig, brands: BrandSummary[], cur
 
 export function trend(data: SeriesResponse, notBefore?: string) {
   const from = notBefore && notBefore > data.from ? notBefore : data.from;
-  const days = fillDays(data.daily, from, data.to, (date) => ({
+  // Today has not been counted yet, so the line ends on the last day that was.
+  const days = fillDays(data.daily, from, recordedTo(data.daily, data.to, from), (date) => ({
     date,
     downloads: 0,
     serverDownloads: 0,

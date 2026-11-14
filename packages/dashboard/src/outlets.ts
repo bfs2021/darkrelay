@@ -7,6 +7,7 @@ import {
   fillDays,
   formatName,
   outletKindName,
+  recordedTo,
   shortDate,
   topEntries,
   trafficSourceName,
@@ -65,7 +66,10 @@ export async function outletView(
     ]),
   );
 
-  const daily = fillDays(data.channel.daily, data.from, data.to, (date) => ({
+  // The channel's last counted day, not today: a day YouTube has not been
+  // asked about yet is not a day with no views.
+  const to = recordedTo(data.channel.daily, data.to, data.from);
+  const daily = fillDays(data.channel.daily, data.from, to, (date) => ({
     date,
     views: 0,
     watchSeconds: 0,
