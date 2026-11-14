@@ -160,6 +160,21 @@ An item with no slot is never uploaded.
 
 **Slots can be moved from the dashboard too.** Every row on _Schedule_ — and everything still waiting for a slot — carries _Reschedule_ for anyone with `uploader` on that brand: a time, or _Release now_. A clip that has not gone up yet simply gets a new slot and is uploaded before it. One already sitting on YouTube as a private video is **moved, not re-uploaded**: the release time the platform is holding is changed, straight away rather than at the next sweep, and the video keeps its id and its URL. A video that is already public says so and stays where it is.
 
+### Videos the channel already has
+
+A Short scheduled in YouTube Studio is real — the platform is holding a release time for it — but DarkRelay has no record of it, so the scheduler cannot see it and the planner has nothing to re-place. **Adopting** writes that record from what the nightly pull already stored:
+
+```bash
+npx darkrelay shorts import my-brand --dry-run   # what it would take, and what it would leave
+npx darkrelay shorts import my-brand
+```
+
+Or _Check YouTube for untracked videos_ on the brand's publish-times page, which lists them before writing anything.
+
+Nothing is uploaded and nothing on the channel changes: an adopted record takes the video's id, its kind, and the release time YouTube is holding, and its media is the video's own URL rather than a key in the bucket. That last part is load-bearing — media that lives on the platform is never uploaded by the sweep, whatever state its publication is in, so adoption can never turn into a second copy of the video. Afterwards it is on the schedule like anything else: reschedulable, re-plannable, and counted among what is coming up.
+
+What it leaves alone, and says so: a video that is already out (nothing to move), a private one with no release time (not scheduled at all), an episode's own video (the feed publishes that), and anything DarkRelay already tracks. Adopting twice adopts nothing new — ids are derived from the platform's id.
+
 ### Picking the slots
 
 The YouTube Analytics API has no hour-of-day dimension, so there is no way to ask when an audience is awake. What it does report is how each video did, and DarkRelay knows when each one went out — so slots are scored from the brand's **own history**, bucketed by the day of week and hour it was published in, in the brand's own timezone.

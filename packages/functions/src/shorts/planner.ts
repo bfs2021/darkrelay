@@ -67,13 +67,13 @@ export interface PlanRequest {
   replan?: boolean;
 }
 
-async function brandOf(deps: PlannerDeps, slug: string): Promise<BrandConfig> {
+export async function brandOf(deps: PlannerDeps, slug: string): Promise<BrandConfig> {
   const brand = (await deps.brands()).find((b) => b.slug === slug);
   if (!brand) throw new Error(`No brand "${slug}" in this deployment`);
   return brand;
 }
 
-function outletOf(brand: BrandConfig, id?: string) {
+export function outletOf(brand: BrandConfig, id?: string) {
   const channels = outletsOfKind(brand, 'youtube');
   const outlet = id ? channels.find((c) => c.id === id) : channels[0];
   if (!outlet) {

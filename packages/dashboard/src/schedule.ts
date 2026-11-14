@@ -1,6 +1,7 @@
 import {
   get,
   post,
+  type AdoptResponse,
   type ApprovalResponse,
   type PendingPlan,
   type PlansResponse,
@@ -13,7 +14,7 @@ import {
 import type { RuntimeConfig } from './auth';
 import { slotEditor } from './reschedule';
 import { brandIcon, card, el, field, link, scroller, stat } from './ui';
-import { compact, formatName, stateNote } from './format';
+import { compact, formatName, slotTime, stateNote } from './format';
 
 // `stateNote` reads the same words on a channel page as it does here, so it
 // lives in format.ts; re-exported because this is where it was first used.
@@ -522,6 +523,8 @@ export async function slotsView(
   buildBox.append(replanLabel, numbers, build, what);
   sections.push(card('Plan the next few weeks', buildBox));
 
+  sections.push(adoptCard(config, brand));
+
   const older = plans.plans.filter((p) => p.planId !== chosen?.planId);
   if (older.length) {
     const list = el('ul', undefined, 'entries');
@@ -543,4 +546,123 @@ export async function slotsView(
   }
 
   app.replaceChildren(...sections);
+}
+
+/**
+ * Videos the channel already holds. A Short scheduled in YouTube Studio is
+ * real, but DarkRelay has no record of it — so the scheduler cannot see it.
+ * Adopting writes that record from what the nightly pull already stored:
+ * nothing is uploaded, and nothing on YouTube changes.
+ */
+function adoptCard(config: RuntimeConfig, brand: string): HTMLElement {
+  const body = el('div');
+  const look = el('button', 'Check YouTube for untracked videos');
+  look.className = 'button secondary';
+  const out = el('div');
+  const note = el(
+    'p',
+    'For Shorts that were scheduled in YouTube Studio rather than here. Adopting takes each one’s release time from the nightly pull and puts it on the schedule; nothing is uploaded and nothing on the channel changes.',
+    'muted',
+  );
+
+  const ask = async (dryRun: boolean) => {
+    look.disabled = true;
+    look.textContent = dryRun ? 'Looking…' : 'Adopting…';
+    try {
+      const result = await post<AdoptResponse>(config, `/schedule/${brand}/import`, { dryRun });
+      out.replaceChildren(adoptResult(config, brand, result, ask));
+    } catch (e) {
+      out.replaceChildren(el('p', (e as Error).message, 'error'));
+    } finally {
+      look.disabled = false;
+      look.textContent = 'Check YouTube for untracked videos';
+    }
+  };
+  look.addEventListener('click', () => void ask(true));
+
+  body.append(look, note, out);
+  return card('Videos already on the channel', body);
+}
+
+function adoptResult(
+  config: RuntimeConfig,
+  brand: string,
+  result: AdoptResponse,
+  ask: (dryRun: boolean) => Promise<void>,
+): HTMLElement {
+  const box = el('div');
+  if (!result.adopted.length) {
+    box.append(
+      el(
+        'p',
+        result.skipped.length
+          ? 'Nothing to adopt: every scheduled video on this channel is already tracked.'
+          : 'Nothing to adopt. Videos appear here the morning after the nightly pull sees them.',
+        'muted',
+      ),
+    );
+  } else {
+    box.append(
+      el(
+        'p',
+        result.dryRun
+          ? `${result.adopted.length} scheduled video${result.adopted.length === 1 ? '' : 's'} on ${result.outlet} that DarkRelay does not track yet:`
+          : `Adopted ${result.adopted.length} video${result.adopted.length === 1 ? '' : 's'}. They are on the schedule now.`,
+        result.dryRun ? undefined : 'ok',
+      ),
+    );
+    const list = el('ul', undefined, 'entries');
+    for (const c of result.adopted) {
+      const li = el('li', undefined, 'entry');
+      li.append(el('span', c.publishAt ? slotTime(c.publishAt) : '—', 'entry-time'));
+      const detail = el('div', undefined, 'entry-body');
+      detail.append(el('div', c.title, 'entry-title'));
+      detail.append(el('div', `${formatName(c.kind)} · ${c.videoId}`, 'muted'));
+      // Once adopted, its slot is editable like anything else here.
+      if (!result.dryRun) {
+        detail.append(
+          slotEditor(config, {
+            brand,
+            id: c.id,
+            title: c.title,
+            publishAt: c.publishAt,
+            state: 'scheduled',
+            externalId: c.videoId,
+          }),
+        );
+      }
+      li.append(detail);
+      list.append(li);
+    }
+    box.append(list);
+    if (result.dryRun) {
+      const take = el('button', `Adopt ${result.adopted.length === 1 ? 'it' : 'them'}`);
+      take.className = 'button';
+      take.addEventListener('click', () => {
+        take.disabled = true;
+        void ask(false);
+      });
+      const actions = el('div', undefined, 'actions');
+      actions.append(take);
+      box.append(actions);
+    }
+  }
+
+  if (result.skipped.length) {
+    const list = el('ul', undefined, 'entries');
+    for (const c of result.skipped.slice(0, 20)) {
+      const li = el('li', undefined, 'entry');
+      li.append(el('span', '—', 'entry-time'));
+      const detail = el('div', undefined, 'entry-body');
+      detail.append(el('div', c.title, 'entry-title'));
+      detail.append(el('div', c.reason ?? '', 'muted'));
+      li.append(detail);
+      list.append(li);
+    }
+    const wrap = el('details');
+    const summary = el('summary', `${result.skipped.length} left alone`);
+    wrap.append(summary, list);
+    box.append(wrap);
+  }
+  return box;
 }

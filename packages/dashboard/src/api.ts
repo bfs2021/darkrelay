@@ -346,6 +346,25 @@ export interface BatchStatus {
   errors?: string[];
 }
 
+/** One video on the channel that DarkRelay could adopt, or did. */
+export interface AdoptCandidate {
+  videoId: string;
+  id: string;
+  title: string;
+  kind: string;
+  publishAt?: string;
+  privacyStatus?: string;
+  reason?: string;
+}
+
+export interface AdoptResponse {
+  brand: string;
+  outlet: string;
+  dryRun: boolean;
+  adopted: AdoptCandidate[];
+  skipped: AdoptCandidate[];
+}
+
 /** What came of moving one item's slot. */
 export interface RescheduleResponse {
   id: string;

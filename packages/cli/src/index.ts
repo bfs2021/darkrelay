@@ -39,6 +39,7 @@ import {
 } from './commands/shorts';
 import {
   approveShortsPlan,
+  importShorts,
   listShortsPlans,
   planShorts,
   showShortsPlan,
@@ -324,6 +325,24 @@ shorts
   .option('--format <kind>', 'score only one format: short, long, live')
   .option('--since <days>', 'ignore history older than this')
   .action((brand, o) => showSlots(brand, o, g()));
+shorts
+  .command('import <brand>')
+  .description('Adopt videos the channel already has, so the scheduler can move them')
+  .addHelpText(
+    'after',
+    `
+For a channel whose Shorts were scheduled in YouTube Studio: this writes the
+content records DarkRelay was missing, taking each video's release time from
+what the nightly pull already stored. Nothing is uploaded and nothing on
+YouTube changes. Afterwards they are on the schedule like anything else:
+
+  darkrelay shorts import my-brand --dry-run
+  darkrelay shorts import my-brand
+  darkrelay shorts plan my-brand --replan`,
+  )
+  .option('--outlet <id>', 'which YouTube outlet (default: the first one)')
+  .option('--dry-run', 'list what would be adopted')
+  .action((brand, o) => importShorts(brand, o, g()));
 shorts
   .command('sweep')
   .description('Run the hourly pass now: upload what is due, move what changed')

@@ -19,6 +19,7 @@ import {
   type PlanRequest,
   type PlannerDeps,
 } from './planner';
+import { adoptFromYouTube } from './adopt';
 import type { Query } from './history';
 import { route } from './schedule-api';
 
@@ -102,7 +103,8 @@ export type PlanEvent =
   | { action: 'approve'; brand: string; planId: string }
   | { action: 'show'; brand: string; planId: string }
   | { action: 'plans'; brand: string }
-  | { action: 'slots'; brand: string; zone?: string; format?: VideoFormat; sinceDays?: number };
+  | { action: 'slots'; brand: string; zone?: string; format?: VideoFormat; sinceDays?: number }
+  | { action: 'import'; brand: string; outlet?: string; dryRun?: boolean };
 
 type HttpEvent = APIGatewayProxyEventV2WithJWTAuthorizer;
 
@@ -176,6 +178,11 @@ async function invoked(event: PlanEvent) {
     }
     case 'plans':
       return listPlans(store, event.brand);
+    case 'import':
+      return adoptFromYouTube(deps, event.brand, {
+        outlet: event.outlet,
+        dryRun: event.dryRun,
+      });
     case 'slots':
       return slotScores(deps, event.brand, {
         zone: event.zone,

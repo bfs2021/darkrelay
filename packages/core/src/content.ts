@@ -163,6 +163,30 @@ export function contentIdFor(file: string, batchId = ''): string {
   return `${slug || 'clip'}-${hash}`;
 }
 
+/**
+ * A stable content id for a video that already exists on a platform. Derived
+ * from the platform's own id, so adopting the same video twice means the same
+ * record rather than a second one.
+ */
+export function contentIdForVideo(title: string, videoId: string): string {
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+  const hash = createHash('sha256').update(videoId).digest('hex').slice(0, 8);
+  return `${slug || 'video'}-${hash}`;
+}
+
+/**
+ * Whether the media lives on the platform rather than in the bucket. True of
+ * anything adopted from a channel: there is no file here to upload, and the
+ * release time is the only thing DarkRelay can move.
+ */
+export function isExternalMedia(item: Pick<ContentItem, 'media'>): boolean {
+  return 'url' in item.media;
+}
+
 /** The publication for one outlet, if the item goes there. */
 export function publicationFor(item: ContentItem, outlet: string): Publication | undefined {
   return item.publications.find((p) => p.outlet === outlet);

@@ -12,6 +12,7 @@ import {
   type VideoFormat,
 } from '@darkrelay/core';
 import { z } from 'zod';
+import { adoptFromYouTube } from './adopt';
 import {
   approvePlan,
   listPlans,
@@ -59,6 +60,11 @@ const PLAN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
  */
 const SlotBody = z
   .object({ at: z.union([z.literal('now'), z.iso.datetime({ offset: true })]) })
+  .strict();
+
+/** Adopting what a channel already holds: look first, then write. */
+const ImportBody = z
+  .object({ outlet: z.string().max(40).optional(), dryRun: z.boolean().optional() })
   .strict();
 
 /** What a dashboard may ask for when building a plan. */
@@ -210,6 +216,20 @@ export async function route(deps: PlannerDeps, req: ScheduleRequest): Promise<Ap
         sinceDays: numberParam(req.params['since']),
       });
       return { statusCode: 200, body: scores };
+    }
+
+    // Adopting videos the channel already holds, so the scheduler can reach
+    // them. Writing records is an uploader's call, and so is looking: a dry
+    // run reads the brand's whole video history.
+    if (parts[2] === 'import') {
+      if (parts.length !== 3) return error(404, 'Not found');
+      if (req.method !== 'POST') return error(405, 'Method not allowed');
+      if (!canUpload(req.access, brand)) return NOT_YOURS;
+      const parsed = ImportBody.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return error(400, z.prettifyError(parsed.error).replace(/\n/g, '; '));
+      }
+      return { statusCode: 200, body: await adoptFromYouTube(deps, brand, parsed.data) };
     }
 
     // Moving one item's slot, including one already uploaded to YouTube: the
