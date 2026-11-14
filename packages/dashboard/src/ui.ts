@@ -173,6 +173,15 @@ export function trend(data: SeriesResponse, notBefore?: string) {
 }
 
 /**
+ * Outlets with a page of their own: a channel, and a podcast feed. A
+ * platform DarkRelay only has a CSV export for has nothing to show beyond
+ * the row it is already on.
+ */
+export function hasOutletPage(kind: string): boolean {
+  return kind === 'youtube' || kind === 'rss';
+}
+
+/**
  * One row per outlet: the feed, each channel, each platform. Outlets replace
  * the older "by source" table; an outlet DarkRelay no longer knows about
  * still appears, named by its source, so no number goes missing.
@@ -187,8 +196,8 @@ export function outletsCard(data: SeriesResponse, brand?: string) {
   for (const row of rows) {
     const tr = body.insertRow();
     const first = tr.insertCell();
-    // A channel has a page of its own; a feed's numbers are the brand page.
-    if (brand && row.kind === 'youtube') first.append(link(`#/s/${brand}/o/${row.id}`, row.name));
+    // A channel and a feed each have a page of their own.
+    if (brand && hasOutletPage(row.kind)) first.append(link(`#/s/${brand}/o/${row.id}`, row.name));
     else first.textContent = row.name;
     const cells = [
       row.plays.toLocaleString('en-US'),
@@ -208,12 +217,19 @@ export function outletsCard(data: SeriesResponse, brand?: string) {
   );
 }
 
-export function breakdowns(data: SeriesResponse) {
+/**
+ * Who downloaded it and from where. Every one of these three is counted from
+ * podcast download logs — YouTube reports no country, device or app — so
+ * they belong to a podcast outlet, not to a brand that has both.
+ *
+ * `apps` names one outlet's own apps, where the page is about one outlet.
+ */
+export function breakdowns(data: SeriesResponse, apps?: Record<string, number>) {
   const grid = el('div', undefined, 'grid');
   grid.append(
     card(
       'Podcast apps',
-      barList(topEntries(podcastApps(data.bySource ?? [])), 'Downloads by podcast app'),
+      barList(topEntries(apps ?? podcastApps(data.bySource ?? [])), 'Downloads by podcast app'),
     ),
     card(
       'Countries',
@@ -704,8 +720,9 @@ export function outletsSummary(data: ShowResponse, brand: string, days: number):
     const tile = el('div', undefined, 'outlet');
     tile.append(el('span', outletLabel(row.kind), `outlet-kind ${row.kind}`));
     const name = el('div', undefined, 'outlet-name');
-    // A channel has a page of its own; a feed's own page is this one.
-    if (row.kind === 'youtube') {
+    // A channel and a feed each have a page of their own: the videos on one,
+    // and where the downloads of the other came from.
+    if (hasOutletPage(row.kind)) {
       name.append(link(`#/s/${brand}/o/${row.id}?days=${days}`, row.name));
     } else name.append(el('span', row.name));
     tile.append(name);

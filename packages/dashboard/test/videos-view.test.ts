@@ -29,7 +29,7 @@ vi.mock('../src/api', () => ({
 
 const { videoCards, countFormats, countScheduled, rangeQuery } = await import('../src/ui');
 const { slotTime, shortDate } = await import('../src/format');
-const { outletView, videoView } = await import('../src/outlets');
+const { outletView, podcastView, videoView } = await import('../src/outlets');
 const { pendingContent } = await import('../src/schedule');
 
 const config = { apiUrl: 'https://api.example', mediaUrl: 'https://cdn.example' } as RuntimeConfig;
@@ -411,6 +411,67 @@ describe('outletView', () => {
   });
 });
 
+describe('podcastView', () => {
+  const brandPage = () => ({
+    show: 'dr',
+    title: 'Dr. Joanne Skiles',
+    from: '2026-08-14',
+    to: '2026-11-12',
+    daily: [],
+    totals: {
+      downloads: 5980,
+      serverDownloads: 424,
+      apps: {},
+      countries: { US: 3200, GB: 748 },
+      devices: { mobile: 3800 },
+    },
+    sources: ['cloudfront'],
+    bySource: [
+      { source: 'cloudfront', plays: 5980, watchSeconds: 0, apps: { 'Apple Podcasts': 2500 } },
+    ],
+    byOutlet: [
+      {
+        id: 'feed',
+        kind: 'rss',
+        name: 'My Show feed',
+        source: 'cloudfront',
+        plays: 5980,
+        watchSeconds: 0,
+        apps: { Overcast: 1000 },
+      },
+    ],
+    outlets: [{ id: 'feed', kind: 'rss', name: 'My Show feed', source: 'cloudfront' }],
+    episodes: [],
+    videos: [],
+  });
+
+  const draw = async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const app = createElement('main');
+    stub.get.set(`/brands/dr?${rangeQuery(90)}`, brandPage());
+    await podcastView(app, config, 'dr', 'feed', 90);
+    vi.useRealTimers();
+    return app;
+  };
+
+  it('is where the podcast breakdowns live, named as the podcast', async () => {
+    const shown = text(await draw());
+    expect(shown).toContain('My Show feed');
+    expect(shown).toContain('Podcast');
+    expect(shown).toContain('Downloads, last 90 days');
+    expect(shown).toContain('Podcast apps');
+    expect(shown).toContain('Countries');
+    expect(shown).toContain('Devices');
+  });
+
+  it('counts the apps of this outlet, not of every podcast source', async () => {
+    const shown = text(await draw());
+    expect(shown).toContain('Overcast');
+    expect(shown).not.toContain('Apple Podcasts');
+  });
+});
+
 describe('videoView', () => {
   const response = (over: Partial<VideoSummary>): VideoResponse => ({
     show: 'dr',
@@ -452,6 +513,12 @@ describe('videoView', () => {
     const shown = await draw({ privacyStatus: 'private', scheduledAt: undefined });
     expect(shown).toContain('Private');
     expect(shown).not.toContain('published');
+  });
+
+  it('leaves out the podcast breakdowns, which a video can never fill', async () => {
+    const shown = await draw({ privacyStatus: 'public' });
+    expect(shown).not.toContain('Podcast apps');
+    expect(shown).not.toContain('Devices');
   });
 
   it('keeps the publish date for a video that is out', async () => {

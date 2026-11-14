@@ -9,7 +9,7 @@ import {
 } from './api';
 import { completeSignIn, currentToken, signIn, signOut, type RuntimeConfig } from './auth';
 import { shortDate } from './format';
-import { outletView, videoView } from './outlets';
+import { outletView, podcastView, videoView } from './outlets';
 import {
   RANGES,
   brandIcon,
@@ -216,7 +216,10 @@ async function brandView(config: RuntimeConfig, brand: string, days: number) {
   if (channels.length || upcoming.items.length || scheduleNotes(upcoming).length) {
     sections.push(scheduledCard(upcoming));
   }
-  sections.push(outletsSummary(data, brand, days), trend(data), breakdowns(data));
+  // Podcast apps, countries and devices are counted from podcast downloads
+  // alone, so they live on the podcast outlet's own page, which the Outlets
+  // box links to, rather than on a page that is both outlets at once.
+  sections.push(outletsSummary(data, brand, days), trend(data));
   if (data.episodes.length || (!videos.length && !scheduled.length)) {
     sections.push(
       card(
@@ -266,6 +269,21 @@ async function episodeView(config: RuntimeConfig, brand: string, id: string, day
   );
 }
 
+/**
+ * An outlet's page, chosen by what the outlet is: a channel's own numbers
+ * come from YouTube, a feed's from the brand's downloads. The kind is read
+ * from the brand list, which is already loaded; an outlet nobody lists is
+ * treated as a channel, which is what every outlet page used to be.
+ */
+async function outletPage(config: RuntimeConfig, brand: string, outletId: string, days: number) {
+  const kind = await brands(config)
+    .then((data) => data.shows.find((s) => s.show === brand))
+    .then((show) => show?.outlets?.find((o) => o.id === outletId)?.kind)
+    .catch(() => undefined);
+  if (kind && kind !== 'youtube') return podcastView(app, config, brand, outletId, days);
+  return outletView(app, config, brand, outletId, days);
+}
+
 /** Which brand the current route is about, for the switcher's current state. */
 function currentBrand(parts: string[]): string | undefined {
   if (parts[0] === 's' || parts[0] === 'b') return parts[1];
@@ -290,7 +308,7 @@ async function render(config: RuntimeConfig) {
     else if ((parts[0] === 's' || parts[0] === 'b') && parts[1] && parts[2] === 'e' && parts[3])
       await episodeView(config, parts[1], parts[3], days);
     else if ((parts[0] === 's' || parts[0] === 'b') && parts[1] && parts[2] === 'o' && parts[3])
-      await outletView(app, config, parts[1], parts[3], days);
+      await outletPage(config, parts[1], parts[3], days);
     else if ((parts[0] === 's' || parts[0] === 'b') && parts[1] && parts[2] === 'v' && parts[3])
       await videoView(app, config, parts[1], parts[3], days);
     else if ((parts[0] === 's' || parts[0] === 'b') && parts[1])
