@@ -185,8 +185,14 @@ describe('analytics dates', async () => {
     expect(datesFor({ from: '2026-10-10', to: '2026-10-10' }, now)).toEqual(['2026-10-10']));
   it('rejects a backwards range naming both dates', () =>
     expect(() => datesFor({ from: '2026-10-11', to: '2026-10-09' }, now)).toThrow(
-      /2026-10-11[\s\S]*2026-10-09/,
+      /--from 2026-10-11 is after --to 2026-10-09/,
     ));
+  it('rejects a future --from against the default --to without inventing a flag', () => {
+    expect(() => datesFor({ from: '2026-10-20' }, now)).toThrow(
+      /--from 2026-10-20 is after the default --to \(yesterday, 2026-10-11\)/,
+    );
+    expect(() => datesFor({ from: '2026-10-20' }, now)).not.toThrow(/after --to 2026-10-11/);
+  });
   it('rejects bad dates', () => expect(() => datesFor({ date: ['10/11/2026'] }, now)).toThrow());
   it('fails a backwards range before the YouTube path can send undefined dates', async () => {
     await expect(

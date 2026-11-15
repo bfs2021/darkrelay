@@ -24,8 +24,16 @@ export function datesFor(
   if (flags.date?.length) return flags.date.map(valid);
   if (flags.from) {
     const from = valid(flags.from);
-    const to = valid(flags.to ?? new Date(now.getTime() - 86_400_000).toISOString().slice(0, 10));
-    if (Date.parse(from) > Date.parse(to)) throw new Error(`--from ${from} is after --to ${to}`);
+    const defaultTo = new Date(now.getTime() - 86_400_000).toISOString().slice(0, 10);
+    const to = valid(flags.to ?? defaultTo);
+    if (Date.parse(from) > Date.parse(to)) {
+      // Only cite --to when the user passed it; otherwise name the default they hit.
+      throw new Error(
+        flags.to
+          ? `--from ${from} is after --to ${to}`
+          : `--from ${from} is after the default --to (yesterday, ${to})`,
+      );
+    }
     const out: string[] = [];
     for (let t = Date.parse(from); t <= Date.parse(to); t += 86_400_000) {
       out.push(new Date(t).toISOString().slice(0, 10));
